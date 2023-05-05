@@ -13,6 +13,8 @@ const loginUser = asyncHandler(async (req, res) => {
   const { nickname, password } = req.body;
   const user = await User.findOne({ nickname });
 
+  console.log("userid", user._id);
+
   if (user && (await user.matchPasswords(password))) {
     res.status(201).json({
       _id: user._id,
@@ -30,8 +32,9 @@ const registerUser = asyncHandler(async (req, res) => {
   const { nickname, password } = req.body;
 
   const userExists = await User.findOne({ nickname });
+  console.log("exist", userExists);
   if (userExists) {
-    res
+    return res
       .status(400)
       .send(
         "We already have an account with that nickname, try to choose another."

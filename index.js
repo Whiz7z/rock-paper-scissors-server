@@ -7,9 +7,29 @@ import helmet from "helmet";
 import bodyParser from "body-parser";
 import connectToDatabase from "./database.js";
 import userRoutes from "./routes/userRoutes.js";
+import roomRoutes from "./routes/roomRoutes.js";
+import { createServer } from "http";
+import { Server } from "socket.io";
+import roomHandlers from "./socketHandlers/roomHandlers.js";
 
 connectToDatabase();
 const app = express();
+const httpServer = createServer(app);
+const io = new Server(httpServer, {
+  cors: {
+    origin: "*",
+  },
+  /* options */
+});
+
+const onConnection = (socket) => {
+  roomHandlers(io, socket);
+
+  console.log(socket.id);
+};
+
+io.on("connection", onConnection);
+
 app.use(helmet());
 app.use(cors());
 
@@ -34,6 +54,7 @@ app.use(bodyParser.json());
 app.use(express.json());
 
 app.use("/api/users", userRoutes);
+app.use("/api/rooms", roomRoutes);
 
 app.get("/api/hello", async (req, res) => {
   res.send("helllo");
@@ -41,6 +62,9 @@ app.get("/api/hello", async (req, res) => {
 
 const port = process.env.PORT || 5000;
 
-app.listen(port, () => {
-  console.log(`Server runs on poooooort ${port}. ${process.env.SERVER_URL}`);
+httpServer.listen(port, () => {
+  console.log(`Server is listening on port ${port}`);
 });
+// app.listen(port, () => {
+//   console.log(`Server runs on poooooort ${port}. ${process.env.SERVER_URL}`);
+// });
