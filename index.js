@@ -5,7 +5,10 @@ import express from "express";
 import cors from "cors";
 import helmet from "helmet";
 import bodyParser from "body-parser";
+import connectToDatabase from "./database.js";
+import userRoutes from "./routes/userRoutes.js";
 
+connectToDatabase();
 const app = express();
 app.use(helmet());
 app.use(cors());
@@ -29,6 +32,8 @@ app.use(function (req, res, next) {
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(bodyParser.json());
 app.use(express.json());
+
+app.use("/api/users", userRoutes);
 
 app.get("/api/hello", async (req, res) => {
   res.send("helllo");
