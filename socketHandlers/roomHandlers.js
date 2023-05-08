@@ -45,51 +45,79 @@ export default (io, socket) => {
 
     let room = await Room.findOne({ roomId: roomId }).populate("players");
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-
     const user = await User.findById(decoded.id);
-    if (
-      room.players.length < 2 &&
-      room.players.filter((player) => player.id === user.id).length === 0
-    ) {
+
+    console.log(
+      "room",
+      room.players.map((player) => player.nickname)
+    );
+
+    if (room.players.find((userId) => userId.id === user.id)) {
+      rooms[roomId] = null;
       socket.join(roomId);
-      room.players.push(user.id);
+
+      const joinedRoom = await Room.findOne({ roomId: roomId }).populate(
+        "players"
+      );
+
+      playersInTheRoom = joinedRoom.players.map((player) => player.nickname);
+      await joinedRoom.save();
+      io.to(roomId).emit("player:ready", {
+        id: user._id,
+        nickname: user.nickname,
+        roomId: roomId,
+        playersInTheRoom: playersInTheRoom,
+      });
+      io.emit("room:joined");
+
+      console.log(
+        "find first",
+        room.players.find((userId) => userId._id === user._id)
+      );
+    } else if (room.players.length === 0) {
+      rooms[roomId] = null;
+      socket.join(roomId);
+      room.players.push(user._id);
       await room.save();
 
       const joinedRoom = await Room.findOne({ roomId: roomId }).populate(
         "players"
       );
-      console.log("saved", joinedRoom.players);
+
       playersInTheRoom = joinedRoom.players.map((player) => player.nickname);
-      console.log("player in the room", playersInTheRoom);
+      await joinedRoom.save();
       io.to(roomId).emit("player:ready", {
         id: user._id,
         nickname: user.nickname,
         roomId: roomId,
         playersInTheRoom: playersInTheRoom,
       });
-      io.emit("room:joined", { id: user._id, nickname: user.nickname });
+      io.emit("room:joined");
     } else if (
-      !(room.players.length >= 2) &&
-      room.players.filter((player) => player.id === user.id).length === 1
+      room.players.length === 1 &&
+      room.players.find((userId) => userId.id != user.id)
     ) {
+      rooms[roomId] = null;
       socket.join(roomId);
+
+      room.players.push(user._id);
+      await room.save();
+
       const joinedRoom = await Room.findOne({ roomId: roomId }).populate(
         "players"
       );
+
       playersInTheRoom = joinedRoom.players.map((player) => player.nickname);
+      await joinedRoom.save();
       io.to(roomId).emit("player:ready", {
         id: user._id,
         nickname: user.nickname,
         roomId: roomId,
         playersInTheRoom: playersInTheRoom,
       });
-      io.emit("room:joined", {
-        id: user._id,
-        nickname: user.nickname,
-        roomId: roomId,
-      });
-    } else {
-      io.emit("room:notjoined", "Room is full");
+      io.emit("room:joined");
+    } else if (room.players.length === 2) {
+      console.log("cannot go in");
     }
   };
 
@@ -112,52 +140,173 @@ export default (io, socket) => {
     );
     playersInTheRoom = joinedRoom.players.map((player) => player.nickname);
     io.to(roomId).emit("player:exited", { playersInTheRoom: playersInTheRoom });
+    rooms[roomId] = null;
   };
 
   const makeMove = async (payload) => {
     const { roomId, choice, nickname } = payload;
+    const room = await Room.findOne({ roomId: roomId }).populate("players");
 
-    if (!rooms[roomId] || rooms[roomId].length === 0) {
-      rooms[roomId] = [];
-      rooms[roomId].push({
-        nickname: nickname,
-        choice: choice,
-      });
-
-      io.in(roomId).emit("player:move-made", rooms[roomId]);
-    } else {
-      rooms[roomId].push({
-        nickname: nickname,
-        choice: choice,
-      });
-      console.log("Rooms after first move of player", rooms);
-      // io.in(roomId).emit("player:move-made", rooms[roomId]);
-      if (rooms[roomId][0].choice === rooms[roomId][1].choice) {
-        io.in(roomId).emit("player:winner", {
-          result: "draw",
-          choices: rooms[roomId],
-        });
-      } else if (
-        rooms[roomId][0].choice === "scissors" &&
-        rooms[roomId][1].choice === "paper"
-      ) {
-        let winner = await User.findOne({
-          name: rooms[roomId][0].nickname,
+    if (
+      room.players.filter((player) => player.nickname === nickname).length >= 1
+    ) {
+      if (!rooms[roomId] || rooms[roomId].length === 0) {
+        rooms[roomId] = [];
+        rooms[roomId].push({
+          nickname: nickname,
+          choice: choice,
         });
 
-        winner.winrate.wins = winner.winrate.wins + 1;
-
-        let loser = await User.findOne({
-          name: rooms[roomId][1].nickname,
+        io.in(roomId).emit("player:move-made", rooms[roomId]);
+        console.log("first move", rooms[roomId]);
+      } else if (rooms[roomId][0].nickname !== nickname) {
+        rooms[roomId].push({
+          nickname: nickname,
+          choice: choice,
         });
 
-        loser.winrate.loses = loser.winrate.loses + 1;
-        await loser.save();
-        await winner.save();
-        io.in(roomId).emit("player:winner", {
-          winner: rooms[roomId][0],
-          choices: rooms[roomId],
-        });
+        console.log("second move", rooms[roomId]);
+        // io.in(roomId).emit("player:move-made", rooms[roomId]);
+        if (rooms[roomId][0].choice === rooms[roomId][1].choice) {
+          io.in(roomId).emit("player:winner", {
+            result: "draw",
+            choices: rooms[roomId],
+          });
+          rooms[roomId] = [];
+        } else if (
+          rooms[roomId][0].choice === "scissors" &&
+          rooms[roomId][1].choice === "paper"
+        ) {
+          let winner = await User.findOne({
+            nickname: rooms[roomId][0].nickname,
+          });
+
+          winner.winrate.wins = winner.winrate.wins + 1;
+
+          let loser = await User.findOne({
+            nickname: rooms[roomId][1].nickname,
+          });
+
+          loser.winrate.loses = loser.winrate.loses + 1;
+          await loser.save();
+          await winner.save();
+          io.in(roomId).emit("player:winner", {
+            winner: rooms[roomId][0],
+            choices: rooms[roomId],
+          });
+          rooms[roomId] = [];
+        } else if (
+          rooms[roomId][0].choice === "paper" &&
+          rooms[roomId][1].choice === "scissors"
+        ) {
+          let winner = await User.findOne({
+            nickname: rooms[roomId][1].nickname,
+          });
+
+          winner.winrate.wins = winner.winrate.wins + 1;
+
+          let loser = await User.findOne({
+            nickname: rooms[roomId][0].nickname,
+          });
+
+          loser.winrate.loses = loser.winrate.loses + 1;
+          await loser.save();
+          await winner.save();
+          io.in(roomId).emit("player:winner", {
+            winner: rooms[roomId][1],
+            choices: rooms[roomId],
+          });
+          rooms[roomId] = [];
+        } else if (
+          rooms[roomId][0].choice === "scissors" &&
+          rooms[roomId][1].choice === "rock"
+        ) {
+          let winner = await User.findOne({
+            nickname: rooms[roomId][1].nickname,
+          });
+
+          winner.winrate.wins = winner.winrate.wins + 1;
+
+          let loser = await User.findOne({
+            nickname: rooms[roomId][0].nickname,
+          });
+
+          loser.winrate.loses = loser.winrate.loses + 1;
+          await loser.save();
+          await winner.save();
+          io.in(roomId).emit("player:winner", {
+            winner: rooms[roomId][1],
+            choices: rooms[roomId],
+          });
+          rooms[roomId] = [];
+        } else if (
+          rooms[roomId][0].choice === "rock" &&
+          rooms[roomId][1].choice === "scissors"
+        ) {
+          let winner = await User.findOne({
+            nickname: rooms[roomId][0].nickname,
+          });
+
+          winner.winrate.wins = winner.winrate.wins + 1;
+
+          let loser = await User.findOne({
+            nickname: rooms[roomId][1].nickname,
+          });
+
+          loser.winrate.loses = loser.winrate.loses + 1;
+          await loser.save();
+          await winner.save();
+          io.in(roomId).emit("player:winner", {
+            winner: rooms[roomId][0],
+            choices: rooms[roomId],
+          });
+          rooms[roomId] = [];
+        } else if (
+          rooms[roomId][0].choice === "paper" &&
+          rooms[roomId][1].choice === "rock"
+        ) {
+          let winner = await User.findOne({
+            nickname: rooms[roomId][0].nickname,
+          });
+
+          winner.winrate.wins = winner.winrate.wins + 1;
+
+          let loser = await User.findOne({
+            nickname: rooms[roomId][1].nickname,
+          });
+
+          loser.winrate.loses = loser.winrate.loses + 1;
+          await loser.save();
+          await winner.save();
+          io.in(roomId).emit("player:winner", {
+            winner: rooms[roomId][0],
+            choices: rooms[roomId],
+          });
+          rooms[roomId] = [];
+        } else if (
+          rooms[roomId][0].choice === "rock" &&
+          rooms[roomId][1].choice === "paper"
+        ) {
+          let winner = await User.findOne({
+            nickname: rooms[roomId][1].nickname,
+          });
+
+          winner.winrate.wins = winner.winrate.wins + 1;
+
+          let loser = await User.findOne({
+            nickname: rooms[roomId][0].nickname,
+          });
+
+          loser.winrate.loses = loser.winrate.loses + 1;
+          await loser.save();
+          await winner.save();
+          io.in(roomId).emit("player:winner", {
+            winner: rooms[roomId][1],
+            choices: rooms[roomId],
+          });
+
+          rooms[roomId] = [];
+        }
       }
     }
   };
