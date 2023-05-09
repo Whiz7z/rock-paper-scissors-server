@@ -61,7 +61,25 @@ const registerUser = asyncHandler(async (req, res) => {
   }
 });
 
+const getWinrate = asyncHandler(async (req, res) => {
+  const token = req.query.token;
+
+  const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+  const user = await User.findById(decoded.id);
+
+  if (user) {
+    res.status(201).json(user.winrate);
+  } else {
+    res.status(400).send("We could not find that user.");
+    throw new Error(
+      "Something went wrong. Please check your data and try again."
+    );
+  }
+});
+
 userRoutes.route("/login").post(loginUser);
 userRoutes.route("/register").post(registerUser);
+userRoutes.route("/winrate").get(getWinrate);
 
 export default userRoutes;

@@ -37,21 +37,25 @@ const joinTheRoom = asyncHandler(async (req, res) => {
 
   let room = await Room.findOne({ roomId: roomId }).populate("players");
 
-  if (
-    !(room.players.length >= 2) &&
-    room.players.filter((player) => player._id === user._id).length === 0
-  ) {
-    room.players.push(user._id);
-    await room.save().then(() => {
+  if (user) {
+    if (
+      !(room.players.length >= 2) &&
+      room.players.filter((player) => player._id === user._id).length === 0
+    ) {
+      room.players.push(user._id);
+      await room.save().then(() => {
+        res.json({ room: room, isJoined: true });
+      });
+    } else if (
+      !(room.players.length >= 2) &&
+      room.players.filter((player) => player._id === user._id).length === 1
+    ) {
       res.json({ room: room, isJoined: true });
-    });
-  } else if (
-    !(room.players.length >= 2) &&
-    room.players.filter((player) => player._id === user._id).length === 1
-  ) {
-    res.json({ room: room, isJoined: true });
+    } else {
+      res.json({ room: room, isJoined: false });
+    }
   } else {
-    res.json({ room: room, isJoined: false });
+    res.status(400).send("You are not logged in");
   }
 });
 

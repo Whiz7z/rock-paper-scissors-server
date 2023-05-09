@@ -6,37 +6,49 @@ let rooms = {};
 
 export default (io, socket) => {
   const createRoom = async (payload) => {
-    const roomId = payload.roomId;
+    const { roomId, token } = payload;
 
-    let rooms = await Room.find({ roomId: roomId });
-    // console.log("roooms", rooms);
-    if (rooms.length <= 0) {
-      const createdRoom = await Room.create({
-        roomId: roomId,
-        players: [],
-      });
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const user = await User.findById(decoded.id);
 
-      await createdRoom.save();
+    if (user) {
+      let rooms = await Room.find({ roomId: roomId });
+      // console.log("roooms", rooms);
+      if (rooms.length <= 0) {
+        const createdRoom = await Room.create({
+          roomId: roomId,
+          players: [],
+        });
 
-      io.emit("room:created", createdRoom);
+        await createdRoom.save();
+
+        io.emit("room:created", createdRoom);
+      }
+    } else {
+      io.emit("room:create_error", "Cannot create room, not logged in");
+      console.log("cannot create room, not authorized");
     }
   };
 
   const deleteRoom = async (payload) => {
     console.log(payload);
-    const roomId = payload;
-    let roomsAfterDeleting = [];
-    const roomToDelete = await Room.findOne({ roomId: roomId }).populate(
-      "players"
-    );
+    const { roomId, token } = payload;
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const user = await User.findById(decoded.id);
 
-    //console.log("room to delete", roomToDelete);
+    if (user) {
+      const roomToDelete = await Room.findOne({ roomId: roomId }).populate(
+        "players"
+      );
 
-    if (roomToDelete.players.length === 0) {
-      await Room.deleteOne({ roomId: roomId });
+      if (roomToDelete.players.length === 0) {
+        await Room.deleteOne({ roomId: roomId });
+      }
+
+      io.emit("room:deleted", "room deleted");
+    } else {
+      console.log("cannot delete not authorized");
     }
-
-    io.emit("room:deleted", "room deleted");
   };
 
   const joinRoom = async (payload) => {
